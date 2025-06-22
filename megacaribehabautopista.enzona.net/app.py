@@ -1,19 +1,29 @@
 import argparse
 import sys
 import re
+import os
 import requests
 import logging.config
 import urllib3
+from pathlib import Path
 
 from bs4 import BeautifulSoup
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # config
-NTFY_URL = "https://ntfy.sh/"
+NTFY_URL = "https://ntfy.sh"
 TARGET_URL = "https://megacaribehabautopista.enzona.net/"
 
-logging.config.fileConfig('config/logging.conf', disable_existing_loggers=False)
+SCRIPT_DIR = Path(__file__).parent
+CONFIG_PATH = SCRIPT_DIR / "config" / "logging.conf"
+LOGS_DIR = SCRIPT_DIR / "logs"
+
+LOGS_DIR.mkdir(exist_ok=True)
+
+logging.config.fileConfig(CONFIG_PATH, disable_existing_loggers=False, defaults={
+    'logfilename': str(LOGS_DIR / "scrapper.log")
+})
 log = logging.getLogger('appLogger')
 
 
@@ -33,28 +43,43 @@ def main() -> int:
                         "Ejemplo: 'entero,parranda,rojo'")
     parser.add_argument("--no-notify", action="store_true", help="No enviar notificación a ntfy.sh")
 
+    # extract args
     args: argparse.Namespace = parser.parse_args()
 
-    notify: bool = not args.no_notify
+    do_notify: bool = not args.no_notify
     target_endpoint: str = args.endpoint
     excluded_keywords: list[str] = args.exclude.split(',') if args.exclude else []
     product_name: str = args.product.lower()
 
-    target_url: str | None = TARGET_URL
+    client = requests.Session()
+
+    proxy_url = {
+        "http": os.getenv("http_proxy"), 
+        "https": os.getenv("https_proxy")
+    }
+    
+    if all(proxy_url.values()):
+        log.debug("si esta detras de un proxy")
+        client.proxies = proxy_url
+
+    # scrap
+    target_product_uri: str | None = f"{TARGET_URL.rstrip('/')}/{target_endpoint.lstrip('/')}"
 
     try:
         log.info("Iniciando scrappeo a megacaribehabautopista.enzona.net")
 
-        response = requests.get(
-            f"{target_url.rstrip('/')}/{args.endpoint.lstrip('/')}",
+        response = client.get(
+            url=target_product_uri,
             verify=False,
             headers={
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"},
-            timeout=10
+                "User-Agent": "Mozilla/5.0 (Linux; Android 11; Redmi Note 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
+            },
+            timeout=90
         )
         response.raise_for_status()
+
     except requests.RequestException as e:
-        log.error(f"Algo salio mal en la request a {TARGET_URL}: {e}")
+        log.error(f"Algo salio mal en la request a {target_product_uri}: {e}")
         return 2
 
     soup = BeautifulSoup(response.text, "html.parser")
@@ -74,24 +99,30 @@ def main() -> int:
     if len(items_list) > 0:
         log.info(f"Productos encontrados: " + ",".join(items_list))
 
-        if notify:
-            log.info(f"Notificando sobre los productos encontrados a `{NTFY_URL}`")
-        
-        try:
-            requests.post(
-                f"https://ntfy.sh/{target_url.split("https://")[-1].replace('/', '').replace('.', '_')}",
-                data="\n".join([f"- {i}" for i in items_list]).encode(encoding='utf-8'),
-                headers={
+        if do_notify:
+            # ntfy config
+            ntfy_channel_uri: str = f"{NTFY_URL}/{target_product_uri.split("https://")[-1].replace('/', '').replace('.', '_')}"
+            ntfy_payload: list[str] = "\n".join([f"- {i}" for i in items_list]).encode(encoding='utf-8')
+            ntfy_headers: dict[str, str] = {
                     "Title": f"Sacaron {product_name}!!",
-                    "Click": target_url + target_endpoint,
+                    "Click": target_product_uri,
                     "Priority": "4",
-                    "Tags": "loudspeaker, loudspeaker",
-                    "Icon": "https://megacaribehabautopista.enzona.net/img/favicon-50.ico?1709832901"
-                },
-                timeout=30
-            )
-        except requests.RequestException as e:
-            log.error(f"Error al enviar la notificación: {e}")
+                    "Tags": "loudspeaker, loudspeaker"
+                }
+            ntfy_timeout: int = 30
+
+            log.info(f"Notificando sobre los productos encontrados a `{ntfy_channel_uri}`")
+        
+            try:
+                client.post(
+                    url=ntfy_channel_uri,
+                    data=ntfy_payload,
+                    headers=ntfy_headers,
+                    timeout=ntfy_timeout,
+                    
+                )
+            except requests.RequestException as e:
+                log.error(f"Error al enviar la notificación: {e}")
             
         return 0
 
@@ -101,4 +132,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try: 
+        sys.exit(main())
+    except KeyboardInterrupt:
+        log.warning("KeyboardInterrupt, quitando manualmente")
