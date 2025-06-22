@@ -2,7 +2,6 @@ import argparse
 import sys
 import re
 import requests
-import logging
 import logging.config
 import urllib3
 
@@ -32,7 +31,7 @@ def main() -> int:
     parser.add_argument("--exclude", required=False, help=
                         "Palabras clave para excluir el producto que las tenga, pueden ser varias en forma de CSV. " \
                         "Ejemplo: 'entero,parranda,rojo'")
-    parser.add_argument("--no-notify", action="store_true", help="No enviar notificación")
+    parser.add_argument("--no-notify", action="store_true", help="No enviar notificación a ntfy.sh")
 
     args: argparse.Namespace = parser.parse_args()
 
