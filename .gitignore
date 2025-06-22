@@ -1,5 +1,5 @@
 # my app
-logs/scrapper.log
+**/logs/scrapper.log
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
