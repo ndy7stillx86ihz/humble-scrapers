@@ -16,6 +16,7 @@ NTFY_URL = "https://ntfy.sh"
 TARGET_URL = "https://megacaribehabautopista.enzona.net/"
 
 SCRIPT_DIR = Path(__file__).parent
+
 CONFIG_PATH = SCRIPT_DIR / "config" / "logging.conf"
 LOGS_DIR = SCRIPT_DIR / "logs"
 
@@ -25,7 +26,6 @@ logging.config.fileConfig(CONFIG_PATH, disable_existing_loggers=False, defaults=
     'logfilename': str(LOGS_DIR / "scrapper.log")
 })
 log = logging.getLogger('appLogger')
-
 
 def clean_product_title(title) -> str:
     return re.sub(r'\.{3,}$', '', re.sub(r'^\(MLC\)\s*', '',
@@ -101,7 +101,7 @@ def main() -> int:
 
         if do_notify:
             # ntfy config
-            ntfy_channel_uri: str = f"{NTFY_URL}/{target_product_uri.split("https://")[-1].replace('/', '').replace('.', '_')}"
+            ntfy_channel_uri: str = f"{NTFY_URL}/{target_product_uri.split("https://")[-1].split("/")[0].replace('.', '_')}"
             ntfy_payload: list[str] = "\n".join([f"- {i}" for i in items_list]).encode(encoding='utf-8')
             ntfy_headers: dict[str, str] = {
                     "Title": f"Sacaron {product_name}!!",
@@ -114,13 +114,14 @@ def main() -> int:
             log.info(f"Notificando sobre los productos encontrados a `{ntfy_channel_uri}`")
         
             try:
-                client.post(
+                response = client.post(
                     url=ntfy_channel_uri,
                     data=ntfy_payload,
                     headers=ntfy_headers,
-                    timeout=ntfy_timeout,
-                    
+                    timeout=ntfy_timeout,    
                 )
+
+                response.raise_for_status()
             except requests.RequestException as e:
                 log.error(f"Error al enviar la notificación: {e}")
             
