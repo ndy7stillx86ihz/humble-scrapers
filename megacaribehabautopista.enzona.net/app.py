@@ -31,6 +31,18 @@ def clean_product_title(title) -> str:
     return re.sub(r'\.{3,}$', '', re.sub(r'^\(MLC\)\s*', '',
                                          ' '.join(title.replace('\n', '').replace('\t', '').split()))).strip()
 
+def scrap(client, uri: str):
+    response = client.get(
+        url=uri,
+        verify=False,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Linux; Android 11; Redmi Note 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
+        },
+        timeout=90
+    )
+    response.raise_for_status()
+
+    return response
 
 def main() -> int:
     parser = argparse.ArgumentParser(
@@ -64,23 +76,23 @@ def main() -> int:
 
     # scrap
     target_product_uri: str | None = f"{TARGET_URL.rstrip('/')}/{target_endpoint.lstrip('/')}"
+    errors_limit = 5
+    errors = 0
+
+    response = None
 
     try:
         log.info("Iniciando scrappeo a megacaribehabautopista.enzona.net")
 
-        response = client.get(
-            url=target_product_uri,
-            verify=False,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Linux; Android 11; Redmi Note 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
-            },
-            timeout=90
-        )
-        response.raise_for_status()
+        response = scrap(client, target_product_uri)
 
     except requests.RequestException as e:
         log.error(f"Algo salio mal en la request a {target_product_uri}: {e}")
-        return 2
+        
+        if errors > errors_limit:
+            return 2
+
+        response = scrap(target_product_uri)
 
     soup = BeautifulSoup(response.text, "html.parser")
     items_list: set[str] = set(
